@@ -1,0 +1,12 @@
+# Illumio CloudSecure credentials
+illumio_client_id     = "your-client-id"
+illumio_client_secret = "your-client-secret"
+
+# Display name for this organization in CloudSecure
+organization_name = "Production AWS Organization"
+
+# Access mode: "Read" for visibility only, "ReadWrite" for policy enforcement
+mode = "ReadWrite"
+
+# Target Organizational Unit IDs (deploy IAM roles to all accounts in these OUs)
+target_ou_ids = ["ou-xxxx-xxxxxxxx"]

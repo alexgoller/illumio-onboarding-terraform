@@ -1,0 +1,12 @@
+# Illumio CloudSecure credentials (create at https://console.illum.io/#/serviceAccounts)
+illumio_client_id     = "your-client-id"
+illumio_client_secret = "your-client-secret"
+
+# Display name for this account in CloudSecure
+account_name = "Production AWS Account"
+
+# Access mode: "Read" for visibility only, "ReadWrite" for policy enforcement
+mode = "ReadWrite"
+
+# Optional: S3 bucket ARN containing VPC flow logs
+# flow_logs_s3_bucket_arn = "arn:aws:s3:::my-flow-logs-bucket"

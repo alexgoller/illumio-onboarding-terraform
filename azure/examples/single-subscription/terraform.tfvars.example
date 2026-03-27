@@ -1,0 +1,19 @@
+# Illumio CloudSecure credentials
+illumio_client_id     = "your-client-id"
+illumio_client_secret = "your-client-secret"
+
+# Azure subscription to onboard
+subscription_id   = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+subscription_name = "Production Azure Subscription"
+
+# Access mode: "Read" for visibility only, "ReadWrite" for policy enforcement
+mode = "ReadWrite"
+
+# Optional: Enable NSG and/or Azure Firewall management
+enable_nsg_management  = false
+enable_azfw_management = false
+
+# Optional: Storage account resource IDs for NSG flow logs
+# flow_logs_storage_account_ids = [
+#   "/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/saname"
+# ]

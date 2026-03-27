@@ -1,0 +1,390 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Illumio AWS Integration
+Parameters:
+  IllumioServiceAccountKey:
+    Description: >-
+      Service account key for the Illumio tenant.
+      If this template was launched from the Illumio Cloud console, this key secret is tied to the tenancy and user that launched the template.
+    Type: String
+    MinLength: 1
+    ConstraintDescription: "IllumioServiceAccountKey cannot be empty"
+  IllumioServiceAccountSecret:
+    Description: >-
+      Service account secret for the Illumio tenant.
+      If this template was launched from the Illumio Cloud console, this key secret is tied to the tenancy and user that launched the template.
+    Type: String
+    NoEcho: true
+    MinLength: 1
+    ConstraintDescription: "IllumioServiceAccountSecret cannot be empty"
+  IllumioConsole:
+    Type: String
+    Default: cloud.illum.io
+    Description: Define your Illumio console to send data to.
+    AllowedValues:
+      - cloud.illum.io
+  IAMRoleName:
+    Description: Customize the name of IAM role for Illumio AWS integration
+    Type: String
+    Default: IllumioCloudIntegrationRole
+    MinLength: 1
+    ConstraintDescription: "IAMRoleName cannot be empty"
+  CloudSecureTenantID:
+    Type: String
+    MinLength: 1
+    ConstraintDescription: "CloudSecureTenantID cannot be empty"
+    Description: >-
+      Illumio CloudSecure TenantID.
+      If this template was launched from the Illumio Cloud console, this tenantID is tied to the user that launched the template.
+
+Resources:
+  LambdaExecutionRoleIllumioCloudAPICall:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName: "OrgReadPolicy"
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: organizations:DescribeOrganization
+                Resource: "*"
+
+  IllumioCloudAPICall:
+    Type: "AWS::CloudFormation::CustomResource"
+    Properties:
+      ServiceToken: !GetAtt IllumioCloudAPICallFunction.Arn
+      ServiceAccountKeyId: !Ref IllumioServiceAccountKey
+      ApiURL: !Ref IllumioConsole
+      AccountId: !Ref AWS::AccountId
+      RoleArn: !GetAtt IllumioCloudIntegrationRole.Arn
+      TenantID: !Ref CloudSecureTenantID
+      HostTags: [ !Sub "aws_account:${AWS::AccountId}" ]
+  IllumioCloudAPICallFunction:
+    Type: "AWS::Lambda::Function"
+    DependsOn: LambdaExecutionRoleIllumioCloudAPICall
+    Properties:
+      Description: "A function to call the Illumio Cloud API."
+      Role: !GetAtt LambdaExecutionRoleIllumioCloudAPICall.Arn
+      Handler: "index.handler"
+      Runtime: "python3.12"
+      Timeout: 60
+      Environment:
+        Variables:
+          ServiceAccountToken: !Ref IllumioServiceAccountSecret
+      Code:
+        ZipFile: |
+          import boto3
+
+          import json
+          import logging
+          import signal
+          import os
+          import base64
+          from urllib.request import build_opener, HTTPHandler, Request
+          import urllib.parse
+
+          LOGGER = logging.getLogger()
+          LOGGER.setLevel(logging.INFO)
+          
+          def get_org_info(event):
+              client = boto3.client("organizations")
+              try:
+                  LOGGER.info("fetching org details using describe org")
+                  response = client.describe_organization()
+                  return response
+              except Exception as e:
+                  message = f"Error: {e}"
+                  LOGGER.info("error occurred when getting org details %s", message)
+              return None
+
+          def call_illumio_cloud_api(event, method):
+              service_account_key = event['ResourceProperties']['ServiceAccountKeyId']
+              service_account_token = os.environ['ServiceAccountToken']
+              api_url = event['ResourceProperties']['ApiURL']
+              account_id = event['ResourceProperties']['AccountId']
+              role_arn = event['ResourceProperties']['RoleArn']
+              host_tags = event['ResourceProperties']['HostTags']
+              tenant_id = event['ResourceProperties']['TenantID']
+              
+              # Setting the values for payload before getting org details. If the org details are there we can add them later.
+              values = {
+                  'account_id': account_id,
+                  'role_arn': role_arn,
+                  'external_id': service_account_key,
+                  'type': 'AWSRole',
+              }
+              
+              # Getting Org details
+              org_details = get_org_info(event)
+              if org_details is not None:
+                  values['org_id'] = org_details['Organization']['Id']
+                  values['management_account_id'] = org_details['Organization']['MasterAccountId']
+              else:
+                  LOGGER.info("unable to get organization details")
+              LOGGER.info("the data is : %s", values)
+          
+              # Make the url Request
+              url = 'https://' + api_url + '/api/v1/integrations/cloud_credentials'
+              LOGGER.info('making api call to '+url)
+              auth = service_account_key+':'+service_account_token
+              auth_base64 = base64.b64encode(auth.encode('utf-8')).decode('utf-8')
+              
+              if method != "DELETE":
+                  values["host_tags"] = host_tags
+
+              headers = {
+                  'Authorization': f'Basic {auth_base64}',
+                  'Content-Type': 'application/json',
+                  'User-Agent': 'IllumioCloudIntegration/1.0'
+              }
+              data = json.dumps(values)
+              data = data.encode('utf-8')  # data should be bytes
+              request = Request(url, data=data, headers=headers)
+              request.add_header('Content-Type', 'application/json; charset=utf-8')
+              request.add_header('Content-Length', len(data))
+              request.add_header('X-Tenant-Id', tenant_id)
+              request.get_method = lambda: method
+
+              # create redirect handler
+              redirect_handler = urllib.request.HTTPRedirectHandler()
+              opener = urllib.request.build_opener(redirect_handler)
+
+              # Send the url Request, store external_id
+              LOGGER.info("making api call to illumio cloudsecure with the role arn, external id and org details")
+              response = opener.open(request)
+              return response
+
+          def handler(event, context):
+            '''Handle Lambda event from AWS'''
+            try:
+                LOGGER.info('REQUEST RECEIVED:\n %s', event)
+                LOGGER.info('REQUEST RECEIVED:\n %s', context)
+                if event['RequestType'] == 'Create':
+                    LOGGER.info('Received Create request.')
+                    response = call_illumio_cloud_api(event, 'POST')
+                    if response.getcode() == 200:
+                        json_response = json.loads(response.read().decode("utf-8"))
+                        send_response(event, context, "SUCCESS",
+                                      {
+                                          "Message": "Illumio Cloud AWS Integration created successfully."
+                                      })
+                    else:
+                        LOGGER.info('Failed - exception thrown during processing.')
+                        send_response(event, context, "FAILED", {
+                            "Message": "Http response: {}".format(response.msg)})
+
+                elif event['RequestType'] == 'Update':
+                    LOGGER.info('Received Update request.')
+                    send_response(event, context, "SUCCESS",
+                                  {"Message": "Update not supported, no operation performed."})
+                elif event['RequestType'] == 'Delete':
+                    LOGGER.info('Received Delete request.')
+                    send_response(event, context, "SUCCESS",
+                                      {
+                                          "Message": "Illumio Cloud AWS Integration deleted successfully.",
+                                      })
+                    '''response = call_illumio_cloud_api(event, 'DELETE')
+
+                    if response.getcode() == 200:
+                        send_response(event, context, "SUCCESS",
+                                      {
+                                          "Message": "Illumio Cloud AWS Integration deleted successfully.",
+                                      })
+                    else:
+                        LOGGER.info('Failed - exception thrown during processing.')
+                        send_response(event, context, "FAILED", {
+                            "Message": "Http response: {}".format(response.msg)})'''
+
+                else:
+                    LOGGER.info('Failed - received unexpected request.')
+                    send_response(event, context, "FAILED",
+                                  {"Message": "Unexpected event received from CloudFormation"})
+            # pylint: disable=W0702
+            except Exception as e:
+                LOGGER.info('Failed - exception thrown during processing.')
+                send_response(event, context, "FAILED", {
+                    "Message": "Exception during processing: {}".format(e)})
+
+
+          def send_response(event, context, response_status, response_data):
+              '''Send a resource manipulation status response to CloudFormation'''
+              response_body = json.dumps({
+                  "Status": response_status,
+                  "Reason": "See the details in CloudWatch Log Stream: " + context.log_stream_name,
+                  "PhysicalResourceId": context.log_stream_name,
+                  "StackId": event['StackId'],
+                  "RequestId": event['RequestId'],
+                  "LogicalResourceId": event['LogicalResourceId'],
+                  "Data": response_data
+              })
+              formatted_response = response_body.encode("utf-8")
+
+              LOGGER.info('ResponseURL: %s', event['ResponseURL'])
+              LOGGER.info('ResponseBody: %s', response_body)
+
+              opener = build_opener(HTTPHandler)
+              request = Request(event['ResponseURL'], data=formatted_response)
+              request.add_header('Content-Type', 'application/json; charset=utf-8')
+              request.add_header('Content-Length', len(formatted_response))
+              request.get_method = lambda: 'PUT'
+              response = opener.open(request)
+              LOGGER.info("Status code: %s", response.getcode())
+              LOGGER.info("Status message: %s", response.msg)
+
+
+          def timeout_handler(_signal, _frame):
+              '''Handle SIGALRM'''
+              raise Exception('Time exceeded')
+
+
+          signal.signal(signal.SIGALRM, timeout_handler)
+
+  IllumioCloudIntegrationRole:
+    Type: 'AWS::IAM::Role'
+    Metadata:
+      cfn-lint:
+        config:
+          # cfn-lint does not yet support "Fn::Transform"
+          # This policy needs broad read permissions to allow Illumio Cloud to collect metrics and metadata
+          ignore_checks:
+            - E3002
+            - E3003
+            - EIAMPolicyActionWildcard
+            - EIAMPolicyWildcardResource
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::712001342241:root"
+            Action:
+              - 'sts:AssumeRole'
+            Condition:
+              StringEquals:
+                'sts:ExternalId': !Ref IllumioServiceAccountKey
+      Path: /
+      RoleName: !Ref IAMRoleName
+      ManagedPolicyArns: ["arn:aws:iam::aws:policy/SecurityAudit"]
+      Policies:
+        - PolicyName: IllumioCloudAWSIntegrationPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Resource: '*'
+                Action:
+                  - 'apigateway:GET'
+                  - 'autoscaling:Describe*'
+                  - 'cloudtrail:DescribeTrails'
+                  - 'cloudtrail:GetTrailStatus'
+                  - 'cloudtrail:LookupEvents'
+                  - 'cloudwatch:Describe*'
+                  - 'cloudwatch:Get*'
+                  - 'cloudwatch:List*'
+                  - 'codedeploy:List*'
+                  - 'codedeploy:BatchGet*'
+                  - 'directconnect:Describe*'
+                  - 'docdb-elastic:GetCluster'
+                  - 'docdb-elastic:ListTagsForResource'
+                  - 'dynamodb:List*'
+                  - 'dynamodb:Describe*'
+                  - 'ec2:Describe*'
+                  - 'ec2:SearchTransitGatewayMulticastGroups'
+                  - 'ecs:Describe*'
+                  - 'ecs:List*'
+                  - 'eks:DescribeAddon'
+                  - 'eks:ListAddons'
+                  - 'elasticache:Describe*'
+                  - 'elasticache:List*'
+                  - 'elasticfilesystem:DescribeAccessPoints'
+                  - 'elasticfilesystem:DescribeFileSystems'
+                  - 'elasticfilesystem:DescribeTags'
+                  - 'elasticloadbalancing:Describe*'
+                  - 'elasticmapreduce:List*'
+                  - 'elasticmapreduce:Describe*'
+                  - 'es:ListTags'
+                  - 'es:ListDomainNames'
+                  - 'es:DescribeElasticsearchDomains'
+                  - 'fsx:DescribeFileSystems'
+                  - 'fsx:ListTagsForResource'
+                  - 'health:DescribeEvents'
+                  - 'health:DescribeEventDetails'
+                  - 'health:DescribeAffectedEntities'
+                  - 'kinesis:List*'
+                  - 'kinesis:Describe*'
+                  - 'lambda:GetPolicy'
+                  - 'lambda:List*'
+                  - 'logs:TestMetricFilter'
+                  - 'logs:DescribeSubscriptionFilters'
+                  - 'organizations:Describe*'
+                  - 'organizations:List*'
+                  - 'rds:Describe*'
+                  - 'rds:List*'
+                  - 'redshift:DescribeClusters'
+                  - 'redshift:DescribeLoggingStatus'
+                  - 'route53:List*'
+                  - 's3:GetBucketLogging'
+                  - 's3:GetBucketLocation'
+                  - 's3:GetBucketNotification'
+                  - 's3:GetBucketTagging'
+                  - 's3:ListAllMyBuckets'
+                  - 'sns:List*'
+                  - 'sqs:ListQueues'
+                  - 'states:ListStateMachines'
+                  - 'states:DescribeStateMachine'
+                  - 'support:DescribeTrustedAdvisor*'
+                  - 'support:RefreshTrustedAdvisorCheck'
+                  - 'tag:GetResources'
+                  - 'tag:GetTagKeys'
+                  - 'tag:GetTagValues'
+                  - 'xray:BatchGetTraces'
+                  - 'xray:GetTraceSummaries'
+                  - 'networkmanager:ListCoreNetworks'
+                  - 'networkmanager:GetCoreNetwork'
+                  - 'networkmanager:ListAttachments'
+                  - 'networkmanager:GetVpcAttachment'
+                  - 'networkmanager:GetSiteToSiteVpnAttachment'
+                  - 'networkmanager:GetConnectAttachment'
+                  - 'networkmanager:GetTransitGatewayRouteTableAttachment'
+                  - 'networkmanager:ListPeerings'
+                  - 'networkmanager:GetTransitGatewayPeering'
+                  - 'networkmanager:GetTransitGatewayRegistrations'
+                  - 'memorydb:ListTagsForResource'
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Required"
+        Parameters:
+          - IllumioServiceAccountKey
+          - IllumioServiceAccountSecret
+          - IllumioConsole
+          - CloudSecureTenantID
+      - Label:
+          default: "Advanced"
+        Parameters:
+          - IAMRoleName
+          - DisableFlowCollection
+    ParameterLabels:
+      IllumioServiceAccountKey:
+        default: "IllumioServiceAccountKey *"
+      IllumioServiceAccountSecret:
+        default: "IllumioServiceAccountSecret *"
+      IllumioConsole:
+        default: "IllumioConsole *"
+      CloudSecureTenantID:
+        default: "CloudSecureTenantID *"

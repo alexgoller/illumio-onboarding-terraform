@@ -1,0 +1,16 @@
+# Illumio CloudSecure credentials
+illumio_client_id     = "your-client-id"
+illumio_client_secret = "your-client-secret"
+
+# GCP project to onboard
+project_id   = "my-gcp-project"
+project_name = "Production GCP Project"
+
+# GCP organization ID (required by Illumio CloudSecure)
+organization_id = "organizations/123456789012"
+
+# Access mode: "Read" for visibility only, "ReadWrite" for policy enforcement
+mode = "ReadWrite"
+
+# Optional: Pub/Sub topic for VPC flow logs
+# flow_logs_pubsub_topic_id = "projects/my-project/topics/flow-logs"

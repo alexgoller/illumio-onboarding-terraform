@@ -1,0 +1,16 @@
+# Illumio CloudSecure credentials
+illumio_client_id     = "your-client-id"
+illumio_client_secret = "your-client-secret"
+
+# GCP folder to onboard
+folder_id   = "123456789012"
+folder_name = "Production GCP Folder"
+
+# GCP organization ID (required for custom role creation)
+organization_id = "123456789012"
+
+# Project where the service account will be created
+sa_project_id = "my-admin-project"
+
+# Access mode
+mode = "ReadWrite"

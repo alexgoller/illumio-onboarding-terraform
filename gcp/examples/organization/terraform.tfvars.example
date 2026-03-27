@@ -1,0 +1,13 @@
+# Illumio CloudSecure credentials
+illumio_client_id     = "your-client-id"
+illumio_client_secret = "your-client-secret"
+
+# GCP organization to onboard
+organization_id   = "123456789012"
+organization_name = "Production GCP Organization"
+
+# Project where the service account will be created
+sa_project_id = "my-admin-project"
+
+# Access mode
+mode = "ReadWrite"
