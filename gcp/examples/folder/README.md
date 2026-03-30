@@ -1,6 +1,6 @@
 # Example: GCP Folder Onboarding
 
-This example onboards a GCP folder into Illumio CloudSecure, providing visibility and optional enforcement for all projects within the folder.
+Onboards a GCP folder into Illumio CloudSecure. See the [module documentation](../../folder/README.md) for full details.
 
 ## Usage
 
@@ -17,5 +17,13 @@ terraform apply
 ## Prerequisites
 
 - Google Cloud SDK authenticated with Folder Admin and Organization Role Admin permissions
-- A GCP project for the service account (can be any project in the org)
-- Illumio CloudSecure service account credentials
+- A GCP project for the service account
+- Illumio CloudSecure service account credentials ([create here](https://console.illum.io/#/serviceAccounts))
+
+## Clean Up
+
+```bash
+terraform destroy
+```
+
+This removes the service account, folder-level IAM bindings, organization-level custom roles, and deregisters from CloudSecure.

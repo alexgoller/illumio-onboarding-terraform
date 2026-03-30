@@ -1,6 +1,6 @@
 # Example: AWS Organization Onboarding
 
-This example onboards an entire AWS Organization into Illumio CloudSecure by deploying IAM roles to all accounts in the specified Organizational Units.
+Onboards an AWS Organization into Illumio CloudSecure via StackSets. See the [module documentation](../../organization/README.md) for full details.
 
 ## Usage
 
@@ -15,6 +15,14 @@ terraform apply
 
 ## Prerequisites
 
-- AWS CLI configured with credentials for the **management account**
-- Management account must have CloudFormation StackSets enabled with service-managed permissions
-- Illumio CloudSecure service account credentials
+- AWS CLI configured with **management account** credentials
+- CloudFormation StackSets trusted access enabled
+- Illumio CloudSecure service account credentials ([create here](https://console.illum.io/#/serviceAccounts))
+
+## Clean Up
+
+```bash
+terraform destroy
+```
+
+This removes IAM roles from all member accounts (via StackSet deletion) and deregisters accounts from CloudSecure.

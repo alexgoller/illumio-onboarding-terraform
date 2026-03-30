@@ -8,7 +8,7 @@ output "service_account_id" {
   value       = google_service_account.illumio.id
 }
 
-output "illumio_project_id" {
-  description = "Illumio CloudSecure project resource ID."
+output "illumio_resource_id" {
+  description = "Illumio CloudSecure resource ID for this organization."
   value       = illumio-cloudsecure_gcp_project.this.id
 }

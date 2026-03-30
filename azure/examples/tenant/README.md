@@ -1,6 +1,6 @@
 # Example: Azure Tenant Onboarding
 
-This example onboards an Azure tenant into Illumio CloudSecure, registering multiple subscriptions under a single AD App Registration.
+Onboards an Azure tenant with multiple subscriptions into Illumio CloudSecure. See the [module documentation](../../tenant/README.md) for full details.
 
 ## Usage
 
@@ -17,4 +17,12 @@ terraform apply
 ## Prerequisites
 
 - Azure CLI authenticated with Owner or User Access Administrator role on the tenant root management group
-- Illumio CloudSecure service account credentials
+- Illumio CloudSecure service account credentials ([create here](https://console.illum.io/#/serviceAccounts))
+
+## Clean Up
+
+```bash
+terraform destroy
+```
+
+This removes the AD application, role assignments at the management group scope, and deregisters all subscriptions from CloudSecure.

@@ -1,44 +1,51 @@
 # Azure Tenant Onboarding for Illumio CloudSecure
 
-This Terraform module onboards an Azure tenant to Illumio CloudSecure. It creates an Azure AD Application Registration and Service Principal with permissions scoped at the root management group level, then registers specified subscriptions within the tenant with Illumio CloudSecure.
+Creates an Azure AD application with tenant-wide Reader permissions (at the root management group), then registers one or more subscriptions with Illumio CloudSecure using shared credentials.
+
+## When to Use This vs. the Subscription Module
+
+| | Subscription Module | Tenant Module |
+|---|---|---|
+| **Scope** | Single subscription | Entire tenant |
+| **Reader role** | Scoped to one subscription | Scoped to root management group (all subscriptions) |
+| **Custom roles** | Scoped to subscription | Scoped to root management group |
+| **Registrations** | One subscription | Multiple subscriptions via `subscription_ids` |
+| **Best for** | Individual subscription onboarding | Centralized onboarding of many subscriptions |
 
 ## Prerequisites
 
-- Terraform >= 1.7
-- An Azure account with permissions to create AD applications, service principals, and role assignments at the management group scope
-- An Illumio CloudSecure account with API credentials (client ID and secret)
-- The Azure AD tenant ID and a list of subscription IDs to onboard
+- **Terraform** >= 1.7
+- **azurerm provider** >= 3.0, **azuread provider** >= 2.0, **illumio-cloudsecure provider** >= 1.7.0
+- Azure CLI authenticated with **Owner** or **User Access Administrator** on the tenant root management group
+- Permission to create Azure AD applications (Application Administrator or Global Administrator)
+- You may need to enable "Access management for Azure resources" in Azure AD > Properties
+- Illumio CloudSecure service account credentials
 
 ## Usage
 
 ```hcl
-module "illumio_azure_tenant" {
-  source = "./azure/tenant"
+provider "azurerm" {
+  features {}
+}
+
+provider "azuread" {}
+
+provider "illumio-cloudsecure" {
+  client_id     = var.illumio_client_id
+  client_secret = var.illumio_client_secret
+}
+
+module "illumio_tenant" {
+  source = "path/to/azure/tenant"
 
   illumio_client_id     = var.illumio_client_id
   illumio_client_secret = var.illumio_client_secret
-
-  tenant_name = "My Azure Tenant"
-  tenant_id   = "00000000-0000-0000-0000-000000000000"
-
-  subscription_ids = [
-    "11111111-1111-1111-1111-111111111111",
-    "22222222-2222-2222-2222-222222222222",
+  tenant_id             = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  tenant_name           = "Production Tenant"
+  subscription_ids      = [
+    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
   ]
-
-  mode = "ReadWrite"
-
-  enable_nsg_management  = true
-  enable_azfw_management = false
-
-  flow_logs_storage_account_ids = [
-    "/subscriptions/.../storageAccounts/mystorageaccount"
-  ]
-
-  tags = {
-    Environment = "production"
-    ManagedBy   = "terraform"
-  }
 }
 ```
 
@@ -46,47 +53,31 @@ module "illumio_azure_tenant" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| illumio_client_id | The client ID for authenticating with the Illumio CloudSecure API. | `string` | n/a | yes |
-| illumio_client_secret | The client secret for authenticating with the Illumio CloudSecure API. | `string` | n/a | yes |
-| tenant_name | The display name for the tenant in Illumio CloudSecure. | `string` | n/a | yes |
-| tenant_id | The Azure AD tenant ID to onboard. | `string` | n/a | yes |
-| subscription_ids | A list of Azure subscription IDs within the tenant to register with Illumio CloudSecure. | `list(string)` | n/a | yes |
-| mode | The onboarding mode for Illumio CloudSecure (`Read` or `ReadWrite`). | `string` | `"ReadWrite"` | no |
-| app_name | The display name for the Azure AD application registration. | `string` | `"Illumio-CloudSecure-Access"` | no |
-| secret_expiration_days | The number of days before the application password expires. | `number` | `365` | no |
-| enable_nsg_management | Whether to enable Network Security Group management permissions. | `bool` | `false` | no |
-| enable_azfw_management | Whether to enable Azure Firewall management permissions. | `bool` | `false` | no |
-| flow_logs_storage_account_ids | A list of Azure Storage Account resource IDs containing flow logs. | `list(string)` | `[]` | no |
-| tags | A map of tags to apply to resources that support tagging. | `map(string)` | `{}` | no |
+| `illumio_client_id` | CloudSecure OAuth 2 client ID | `string` | — | yes |
+| `illumio_client_secret` | CloudSecure OAuth 2 client secret | `string` | — | yes |
+| `tenant_id` | Azure AD tenant ID | `string` | — | yes |
+| `tenant_name` | Display name in CloudSecure | `string` | — | yes |
+| `subscription_ids` | Subscription IDs to register with CloudSecure | `list(string)` | — | yes |
+| `mode` | `"Read"` or `"ReadWrite"` | `string` | `"ReadWrite"` | no |
+| `app_name` | Azure AD application display name | `string` | `"Illumio-CloudSecure-Access"` | no |
+| `secret_expiration_days` | Days until the app secret expires | `number` | `365` | no |
+| `enable_nsg_management` | Grant NSG management permissions | `bool` | `false` | no |
+| `enable_azfw_management` | Grant Azure Firewall management permissions | `bool` | `false` | no |
+| `flow_logs_storage_account_ids` | Storage account resource IDs for flow logs | `list(string)` | `[]` | no |
+| `tags` | Tags for resources | `map(string)` | `{}` | no |
 
 ## Outputs
 
-| Name | Description |
-|------|-------------|
-| application_id | The Application (client) ID of the Azure AD application. |
-| service_principal_id | The Object ID of the Azure AD service principal. |
-| client_secret | The client secret for the Azure AD application (sensitive). |
-| illumio_subscription_ids | A map of Azure subscription IDs to their Illumio CloudSecure resource IDs. |
+| Name | Description | Sensitive |
+|------|-------------|-----------|
+| `application_id` | Azure AD application (client) ID | no |
+| `service_principal_id` | Azure AD service principal object ID | no |
+| `client_secret` | Azure AD application password | yes |
+| `illumio_subscription_ids` | Map of subscription IDs to CloudSecure resource IDs | no |
 
-## Resources Created
+## Important Notes
 
-- **azuread_application** - Azure AD application registration for Illumio CloudSecure
-- **azuread_service_principal** - Service principal linked to the application
-- **azuread_application_password** - Client secret for the application
-- **azurerm_role_assignment (Reader)** - Reader role on the root management group
-- **azurerm_role_definition (Firewall Admin)** - Custom role for Azure Firewall management at management group scope (conditional)
-- **azurerm_role_assignment (Firewall Admin)** - Firewall admin role assignment at management group scope (conditional)
-- **azurerm_role_definition (NSG Admin)** - Custom role for NSG management at management group scope (conditional)
-- **azurerm_role_assignment (NSG Admin)** - NSG admin role assignment at management group scope (conditional)
-- **azurerm_role_assignment (Storage Blob Data Reader)** - Per storage account for flow logs (conditional)
-- **illumio-cloudsecure_azure_subscription** - Registers each subscription with Illumio CloudSecure (one per subscription_id)
-- **illumio-cloudsecure_azure_flow_logs_storage_account** - Registers flow log storage accounts (conditional)
-
-## Key Differences from the Subscription Module
-
-| Aspect | Subscription Module | Tenant Module |
-|--------|-------------------|---------------|
-| Scope | Single subscription | Root management group (tenant-wide) |
-| Role assignments | Scoped to `/subscriptions/{id}` | Scoped to `/providers/Microsoft.Management/managementGroups/{tenant_id}` |
-| CloudSecure registration | Single subscription | Multiple subscriptions via `for_each` |
-| Custom role names | Suffixed with subscription ID | Suffixed with tenant ID |
+- **Secret expiration**: Same as the subscription module — the app secret defaults to 365 days. Re-run `terraform apply` before expiration.
+- **Elevated permissions**: The root management group scope requires elevated access. You may need to enable "Access management for Azure resources" under Azure AD > Properties.
+- **Adding subscriptions**: To onboard additional subscriptions, add them to `subscription_ids` and re-run `terraform apply`. The existing AD app and roles are reused.
+- **Destroy behavior**: Removes the AD application, all role assignments at the management group scope, and deregisters all subscriptions from CloudSecure.

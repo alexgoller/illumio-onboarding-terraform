@@ -1,6 +1,7 @@
 variable "illumio_client_id" {
   description = "The client ID for authenticating with the Illumio CloudSecure API."
   type        = string
+  sensitive   = true
 }
 
 variable "illumio_client_secret" {

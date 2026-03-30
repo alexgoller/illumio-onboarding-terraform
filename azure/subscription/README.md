@@ -1,38 +1,47 @@
 # Azure Subscription Onboarding for Illumio CloudSecure
 
-This Terraform module onboards a single Azure subscription to Illumio CloudSecure. It creates an Azure AD Application Registration, Service Principal, assigns the necessary roles, and registers the subscription with Illumio CloudSecure.
+Creates an Azure AD application, service principal, and role assignments, then registers a single Azure subscription with Illumio CloudSecure.
 
 ## Prerequisites
 
-- Terraform >= 1.7
-- An Azure account with permissions to create AD applications, service principals, and role assignments
-- An Illumio CloudSecure account with API credentials (client ID and secret)
-- The Azure subscription ID to onboard
+- **Terraform** >= 1.7
+- **azurerm provider** >= 3.0, **azuread provider** >= 2.0, **illumio-cloudsecure provider** >= 1.7.0
+- Azure CLI authenticated (`az login`) with **Owner** or **User Access Administrator** role on the target subscription
+- Permission to create Azure AD applications (Application Administrator or Global Administrator)
+- Illumio CloudSecure service account credentials ([create here](https://console.illum.io/#/serviceAccounts))
 
 ## Usage
 
 ```hcl
-module "illumio_azure_subscription" {
-  source = "./azure/subscription"
+provider "azurerm" {
+  features {}
+  subscription_id = var.subscription_id
+}
+
+provider "azuread" {}
+
+provider "illumio-cloudsecure" {
+  client_id     = var.illumio_client_id
+  client_secret = var.illumio_client_secret
+}
+
+module "illumio_azure" {
+  source = "path/to/azure/subscription"
 
   illumio_client_id     = var.illumio_client_id
   illumio_client_secret = var.illumio_client_secret
+  subscription_id       = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  subscription_name     = "Production Subscription"
+  mode                  = "ReadWrite"
 
-  subscription_name = "My Azure Subscription"
-  subscription_id   = "00000000-0000-0000-0000-000000000000"
-  mode              = "ReadWrite"
+  # Optional: enable write permissions for NSG and/or Azure Firewall
+  # enable_nsg_management  = true
+  # enable_azfw_management = true
 
-  enable_nsg_management  = true
-  enable_azfw_management = false
-
-  flow_logs_storage_account_ids = [
-    "/subscriptions/.../storageAccounts/mystorageaccount"
-  ]
-
-  tags = {
-    Environment = "production"
-    ManagedBy   = "terraform"
-  }
+  # Optional: storage accounts for NSG flow logs
+  # flow_logs_storage_account_ids = [
+  #   "/subscriptions/.../providers/Microsoft.Storage/storageAccounts/saname"
+  # ]
 }
 ```
 
@@ -40,37 +49,54 @@ module "illumio_azure_subscription" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| illumio_client_id | The client ID for authenticating with the Illumio CloudSecure API. | `string` | n/a | yes |
-| illumio_client_secret | The client secret for authenticating with the Illumio CloudSecure API. | `string` | n/a | yes |
-| subscription_name | The display name for the subscription in Illumio CloudSecure. | `string` | n/a | yes |
-| subscription_id | The Azure subscription ID to onboard. | `string` | n/a | yes |
-| mode | The onboarding mode for Illumio CloudSecure (`Read` or `ReadWrite`). | `string` | `"ReadWrite"` | no |
-| app_name | The display name for the Azure AD application registration. | `string` | `"Illumio-CloudSecure-Access"` | no |
-| secret_expiration_days | The number of days before the application password expires. | `number` | `365` | no |
-| enable_nsg_management | Whether to enable Network Security Group management permissions. | `bool` | `false` | no |
-| enable_azfw_management | Whether to enable Azure Firewall management permissions. | `bool` | `false` | no |
-| flow_logs_storage_account_ids | A list of Azure Storage Account resource IDs containing flow logs. | `list(string)` | `[]` | no |
-| tags | A map of tags to apply to resources that support tagging. | `map(string)` | `{}` | no |
+| `illumio_client_id` | CloudSecure OAuth 2 client ID | `string` | — | yes |
+| `illumio_client_secret` | CloudSecure OAuth 2 client secret | `string` | — | yes |
+| `subscription_id` | Azure subscription ID to onboard | `string` | — | yes |
+| `subscription_name` | Display name in CloudSecure | `string` | — | yes |
+| `mode` | `"Read"` or `"ReadWrite"` | `string` | `"ReadWrite"` | no |
+| `app_name` | Azure AD application display name | `string` | `"Illumio-CloudSecure-Access"` | no |
+| `secret_expiration_days` | Days until the app secret expires | `number` | `365` | no |
+| `enable_nsg_management` | Grant NSG management permissions | `bool` | `false` | no |
+| `enable_azfw_management` | Grant Azure Firewall management permissions | `bool` | `false` | no |
+| `flow_logs_storage_account_ids` | Storage account resource IDs for flow logs | `list(string)` | `[]` | no |
+| `tags` | Tags for resources | `map(string)` | `{}` | no |
 
 ## Outputs
 
-| Name | Description |
-|------|-------------|
-| application_id | The Application (client) ID of the Azure AD application. |
-| service_principal_id | The Object ID of the Azure AD service principal. |
-| client_secret | The client secret for the Azure AD application (sensitive). |
-| illumio_subscription_id | The Illumio CloudSecure subscription resource ID. |
+| Name | Description | Sensitive |
+|------|-------------|-----------|
+| `application_id` | Azure AD application (client) ID | no |
+| `service_principal_id` | Azure AD service principal object ID | no |
+| `client_secret` | Azure AD application password | yes |
+| `illumio_subscription_id` | CloudSecure subscription resource ID | no |
 
 ## Resources Created
 
-- **azuread_application** - Azure AD application registration for Illumio CloudSecure
-- **azuread_service_principal** - Service principal linked to the application
-- **azuread_application_password** - Client secret for the application
-- **azurerm_role_assignment (Reader)** - Reader role on the subscription
-- **azurerm_role_definition (Firewall Admin)** - Custom role for Azure Firewall management (conditional)
-- **azurerm_role_assignment (Firewall Admin)** - Firewall admin role assignment (conditional)
-- **azurerm_role_definition (NSG Admin)** - Custom role for NSG management (conditional)
-- **azurerm_role_assignment (NSG Admin)** - NSG admin role assignment (conditional)
-- **azurerm_role_assignment (Storage Blob Data Reader)** - Per storage account for flow logs (conditional)
-- **illumio-cloudsecure_azure_subscription** - Registers the subscription with Illumio CloudSecure
-- **illumio-cloudsecure_azure_flow_logs_storage_account** - Registers flow log storage accounts (conditional)
+| Resource | Purpose |
+|----------|---------|
+| `azuread_application` | AD App Registration for CloudSecure |
+| `azuread_service_principal` | Service Principal for the app |
+| `azuread_application_password` | Client secret with configurable expiration |
+| `azurerm_role_assignment` (Reader) | Reader role on the subscription |
+| `azurerm_role_definition` (Firewall Admin) | Custom role for Azure Firewall management (when enabled) |
+| `azurerm_role_definition` (NSG Admin) | Custom role for NSG management (when enabled) |
+| `azurerm_role_assignment` (Storage) | Storage Blob Data Reader per storage account (for flow logs) |
+| `illumio-cloudsecure_azure_subscription` | Registers the subscription with CloudSecure |
+| `illumio-cloudsecure_azure_flow_logs_storage_account` | Registers flow log storage accounts (if provided) |
+
+## Understanding `mode` vs. `enable_nsg_management` / `enable_azfw_management`
+
+The `mode` variable controls how CloudSecure **treats** the subscription (read-only visibility vs. active enforcement). The `enable_*` flags control which **Azure RBAC permissions** are granted:
+
+| Configuration | Effect |
+|---------------|--------|
+| `mode = "Read"` | CloudSecure monitors only, no write permissions granted regardless of enable flags |
+| `mode = "ReadWrite"` | CloudSecure can enforce policy, but only has Reader role by default |
+| `mode = "ReadWrite"` + `enable_nsg_management = true` | Adds NSG Admin + Firewall Admin custom roles for NSG enforcement |
+| `mode = "ReadWrite"` + `enable_azfw_management = true` | Adds Firewall Admin custom role for Azure Firewall enforcement |
+
+## Important Notes
+
+- **Secret expiration**: The app secret expires after `secret_expiration_days` (default: 365 days). When it expires, CloudSecure loses access. Re-run `terraform apply` before expiration to rotate the secret.
+- **Destroy behavior**: Destroying removes the AD application, service principal, all role assignments, and deregisters from CloudSecure. If other systems depend on the AD application, add `lifecycle { prevent_destroy = true }`.
+- **Sensitive outputs**: The `client_secret` output is sensitive. Use an encrypted remote backend for state storage.
