@@ -26,6 +26,9 @@ provider "illumio-cloudsecure" {
 }
 
 module "illumio_azure" {
+  # Use a local path, Git URL, or Terraform Registry source, e.g.:
+  #   source = "../../azure/subscription"                                             # local path
+  #   source = "git::https://github.com/<org>/illumio-onboarding-terraform.git//azure/subscription"  # Git
   source = "path/to/azure/subscription"
 
   illumio_client_id     = var.illumio_client_id

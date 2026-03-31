@@ -25,6 +25,9 @@ provider "illumio-cloudsecure" {
 }
 
 module "illumio_gcp_folder" {
+  # Use a local path, Git URL, or Terraform Registry source, e.g.:
+  #   source = "../../gcp/folder"                                             # local path
+  #   source = "git::https://github.com/<org>/illumio-onboarding-terraform.git//gcp/folder"  # Git
   source = "path/to/gcp/folder"
 
   illumio_client_id     = var.illumio_client_id

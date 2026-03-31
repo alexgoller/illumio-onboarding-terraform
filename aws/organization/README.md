@@ -31,6 +31,9 @@ provider "illumio-cloudsecure" {
 }
 
 module "illumio_org" {
+  # Use a local path, Git URL, or Terraform Registry source, e.g.:
+  #   source = "../../aws/organization"                                             # local path
+  #   source = "git::https://github.com/<org>/illumio-onboarding-terraform.git//aws/organization"  # Git
   source = "path/to/aws/organization"
 
   illumio_client_id     = var.illumio_client_id
